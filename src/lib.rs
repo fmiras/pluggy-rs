@@ -93,8 +93,6 @@ impl Client {
         let json: serde_json::Value = serde_json::from_str(&body)?;
         let connect_token = json["accessToken"].as_str();
 
-        print!("{:?}", json);
-
         match connect_token {
             Some(connect_token) => Ok(connect_token.to_string()),
             None => Err("No connect token found".into()),
