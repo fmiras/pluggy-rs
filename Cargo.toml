@@ -1,6 +1,10 @@
 [package]
 name = "pluggy"
 description = "API bindings for Pluggy written in Rust"
+authors = ["Federico Miras <federico@pluggy.ai>"]
+keywords = ["pluggy", "api", "async"]
+categories = ["api-bindings"]
+license = "MIT"
 version = "0.1.0"
 edition = "2021"
 
