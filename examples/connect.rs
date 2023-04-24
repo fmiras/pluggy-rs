@@ -8,5 +8,5 @@ async fn main() {
     let connect_token = client.create_connect_token(&api_key).await.unwrap();
     let header = decode_header(&connect_token).unwrap();
 
-    print!("Created a new connect token with header {:?}", header)
+    println!("Created a new connect token with header {:?}", header)
 }

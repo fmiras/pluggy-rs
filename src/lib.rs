@@ -1,14 +1,11 @@
 use hyper::{Body, Client as HyperClient, Method, Request};
 use hyper_tls::HttpsConnector;
-use serde::Serialize;
 
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AuthRequest {
-    client_id: String,
-    client_secret: String,
-    non_expiring: bool,
-}
+use crate::auth::*;
+use crate::resources::*;
+
+mod auth;
+mod resources;
 
 pub struct Client {
     client_id: String,
@@ -48,7 +45,7 @@ impl Client {
         let payload = AuthRequest {
             client_id: self.client_id.clone(),
             client_secret: self.client_secret.clone(),
-            non_expiring: false,
+            non_expiring: None,
         };
 
         // Serialize the payload to a JSON string
@@ -88,7 +85,7 @@ impl Client {
             .body(Body::empty())?;
 
         let response = self.client.request(request).await?;
-        let body = hyper::body::to_bytes(response.into_body()).await?;
+        let body: hyper::body::Bytes = hyper::body::to_bytes(response.into_body()).await?;
         let body = String::from_utf8(body.to_vec())?;
         let json: serde_json::Value = serde_json::from_str(&body)?;
         let connect_token = json["accessToken"].as_str();
@@ -97,6 +94,28 @@ impl Client {
             Some(connect_token) => Ok(connect_token.to_string()),
             None => Err("No connect token found".into()),
         }
+    }
+
+    pub async fn get_connectors(
+        &self,
+        api_key: &str,
+    ) -> Result<Vec<Connector>, Box<dyn std::error::Error>> {
+        let url = format!("{}/connectors", self.url);
+
+        let request = Request::builder()
+            .method(Method::GET)
+            .uri(url)
+            .header("Content-Type", "application/json")
+            .header("Accept", "application/json")
+            .header("X-API-KEY", api_key)
+            .body(Body::empty())
+            .unwrap();
+
+        let resp = self.client.request(request).await?;
+        let body: hyper::body::Bytes = hyper::body::to_bytes(resp.into_body()).await?;
+        let json: PageResponse<Connector> = serde_json::from_slice(&body)?;
+
+        Ok(json.results)
     }
 }
 
@@ -119,5 +138,21 @@ mod tests {
         let (client, api_key) = Client::new_from_env_with_api_key().await.unwrap();
         let connect_token = client.create_connect_token(&api_key).await.unwrap();
         assert_eq!(connect_token.len(), 892);
+    }
+
+    #[tokio::test]
+    async fn can_get_connectors() {
+        let (client, api_key) = Client::new_from_env_with_api_key().await.unwrap();
+        let connectors = client.get_connectors(&api_key).await.unwrap();
+
+        // search with id 1
+        let connector = connectors.iter().find(|c| c.id == 201);
+        match connector {
+            Some(connector) => {
+                assert_eq!(connector.id, 201);
+                assert_eq!(connector.name, "Itaú");
+            }
+            None => panic!("No connector found"),
+        }
     }
 }
