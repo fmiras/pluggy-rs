@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use hyper::http::request::Builder;
 use hyper::{Body, Client as HyperClient, Method, Request};
 use hyper_tls::HttpsConnector;
@@ -152,6 +154,26 @@ impl Client {
 
         Ok(json)
     }
+
+    pub async fn validate_parameters(
+        &self,
+        api_key: &str,
+        connector_id: i32,
+        parameters: &HashMap<&str, &str>,
+    ) -> Result<ValidationResult, Box<dyn std::error::Error>> {
+        let url = Url::parse(&format!(
+            "{}/connectors/{}/validate",
+            self.url, connector_id
+        ))?;
+        let request = authenticated_request_builder(Method::POST, &url, api_key)
+            .body(Body::from(serde_json::to_string(parameters)?))?;
+        let response = self.client.request(request).await?;
+
+        let body: hyper::body::Bytes = hyper::body::to_bytes(response.into_body()).await?;
+        let json: ValidationResult = serde_json::from_slice(&body)?;
+
+        Ok(json)
+    }
 }
 
 #[cfg(test)]
@@ -248,5 +270,41 @@ mod tests {
         assert_eq!(item.consecutive_failed_login_attempts, 0);
         assert_eq!(item.connector.id, 201);
         assert_eq!(item.connector.name, "Itaú");
+    }
+
+    #[tokio::test]
+    async fn can_validate_parameters() {
+        let (client, api_key) = Client::new_from_env_with_api_key().await.unwrap();
+        let parameters = HashMap::from([("user", "user-ok"), ("password", "password-ok")]);
+        let result = client
+            .validate_parameters(&api_key, 2, &parameters)
+            .await
+            .unwrap();
+
+        assert_eq!(result.parameters.len(), 2);
+
+        let user = result.parameters.get_key_value("user");
+        assert!(user.is_some());
+
+        match user {
+            Some((key, value)) => {
+                assert_eq!(key, "user");
+                assert_eq!(value, "user-ok");
+            }
+            _ => panic!("No user parameter found"),
+        }
+
+        let password = result.parameters.get_key_value("password");
+        assert!(password.is_some());
+
+        match password {
+            Some((key, value)) => {
+                assert_eq!(key, "password");
+                assert_eq!(value, "password-ok");
+            }
+            _ => panic!("No password parameter found"),
+        }
+
+        assert_eq!(result.errors.len(), 0);
     }
 }

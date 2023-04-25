@@ -3,10 +3,12 @@ use serde::Deserialize;
 pub use crate::resources::connector::*;
 pub use crate::resources::execution::*;
 pub use crate::resources::item::*;
+pub use crate::resources::validation::*;
 
 mod connector;
 mod execution;
 mod item;
+mod validation;
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
