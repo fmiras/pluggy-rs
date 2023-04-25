@@ -1,3 +1,4 @@
+use hyper::http::request::Builder;
 use hyper::{Body, Client as HyperClient, Method, Request};
 use hyper_tls::HttpsConnector;
 
@@ -12,6 +13,15 @@ pub struct Client {
     client_secret: String,
     url: String,
     client: HyperClient<HttpsConnector<hyper::client::connect::HttpConnector>>,
+}
+
+pub fn authenticated_request_builder(method: Method, url: &str, api_key: &str) -> Builder {
+    Request::builder()
+        .method(method)
+        .uri(url)
+        .header("Content-Type", "application/json")
+        .header("Accept", "application/json")
+        .header("X-API-KEY", api_key)
 }
 
 impl Client {
@@ -48,10 +58,8 @@ impl Client {
             non_expiring: None,
         };
 
-        // Serialize the payload to a JSON string
         let json_payload = serde_json::to_string(&payload)?;
 
-        // fetch with hyper rs
         let request = Request::builder()
             .method(Method::POST)
             .uri(url)
@@ -75,16 +83,10 @@ impl Client {
         api_key: &str,
     ) -> Result<String, Box<dyn std::error::Error>> {
         let url = format!("{}/connect_token", self.url);
-
-        let request = Request::builder()
-            .method(Method::POST)
-            .uri(url)
-            .header("Content-Type", "application/json")
-            .header("Accept", "application/json")
-            .header("X-API-KEY", api_key)
-            .body(Body::empty())?;
-
+        let request =
+            authenticated_request_builder(Method::POST, &url, api_key).body(Body::empty())?;
         let response = self.client.request(request).await?;
+
         let body: hyper::body::Bytes = hyper::body::to_bytes(response.into_body()).await?;
         let body = String::from_utf8(body.to_vec())?;
         let json: serde_json::Value = serde_json::from_str(&body)?;
@@ -101,21 +103,46 @@ impl Client {
         api_key: &str,
     ) -> Result<Vec<Connector>, Box<dyn std::error::Error>> {
         let url = format!("{}/connectors", self.url);
+        let request =
+            authenticated_request_builder(Method::GET, &url, api_key).body(Body::empty())?;
+        let response = self.client.request(request).await?;
 
-        let request = Request::builder()
-            .method(Method::GET)
-            .uri(url)
-            .header("Content-Type", "application/json")
-            .header("Accept", "application/json")
-            .header("X-API-KEY", api_key)
-            .body(Body::empty())
-            .unwrap();
-
-        let resp = self.client.request(request).await?;
-        let body: hyper::body::Bytes = hyper::body::to_bytes(resp.into_body()).await?;
+        let body: hyper::body::Bytes = hyper::body::to_bytes(response.into_body()).await?;
         let json: PageResponse<Connector> = serde_json::from_slice(&body)?;
 
         Ok(json.results)
+    }
+
+    pub async fn get_connector(
+        &self,
+        api_key: &str,
+        connector_id: &str,
+    ) -> Result<Connector, Box<dyn std::error::Error>> {
+        let url = format!("{}/connectors/{}", self.url, connector_id);
+        let request =
+            authenticated_request_builder(Method::GET, &url, api_key).body(Body::empty())?;
+        let response = self.client.request(request).await?;
+
+        let body: hyper::body::Bytes = hyper::body::to_bytes(response.into_body()).await?;
+        let json: Connector = serde_json::from_slice(&body)?;
+
+        Ok(json)
+    }
+
+    pub async fn get_item(
+        &self,
+        api_key: &str,
+        item_id: &str,
+    ) -> Result<Item, Box<dyn std::error::Error>> {
+        let url = format!("{}/items/{}", self.url, item_id);
+        let request =
+            authenticated_request_builder(Method::GET, &url, api_key).body(Body::empty())?;
+        let response = self.client.request(request).await?;
+
+        let body: hyper::body::Bytes = hyper::body::to_bytes(response.into_body()).await?;
+        let json: Item = serde_json::from_slice(&body)?;
+
+        Ok(json)
     }
 }
 
@@ -145,7 +172,6 @@ mod tests {
         let (client, api_key) = Client::new_from_env_with_api_key().await.unwrap();
         let connectors = client.get_connectors(&api_key).await.unwrap();
 
-        // search with id 1
         let connector = connectors.iter().find(|c| c.id == 201);
         match connector {
             Some(connector) => {
@@ -154,5 +180,22 @@ mod tests {
             }
             None => panic!("No connector found"),
         }
+    }
+
+    #[tokio::test]
+    async fn can_get_connector() {
+        let (client, api_key) = Client::new_from_env_with_api_key().await.unwrap();
+        let connector = client.get_connector(&api_key, "201").await.unwrap();
+
+        assert_eq!(connector.id, 201);
+        assert_eq!(connector.name, "Itaú");
+    }
+
+    #[tokio::test]
+    async fn can_get_item() {
+        let (client, api_key) = Client::new_from_env_with_api_key().await.unwrap();
+        let item = client.get_item(&api_key, "123").await.unwrap();
+
+        assert_eq!(item.id, "123");
     }
 }
