@@ -1,6 +1,7 @@
 use hyper::http::request::Builder;
 use hyper::{Body, Client as HyperClient, Method, Request};
 use hyper_tls::HttpsConnector;
+use url::Url;
 
 use crate::auth::*;
 use crate::resources::*;
@@ -15,10 +16,10 @@ pub struct Client {
     client: HyperClient<HttpsConnector<hyper::client::connect::HttpConnector>>,
 }
 
-pub fn authenticated_request_builder(method: Method, url: &str, api_key: &str) -> Builder {
+pub fn authenticated_request_builder(method: Method, url: &Url, api_key: &str) -> Builder {
     Request::builder()
         .method(method)
-        .uri(url)
+        .uri(url.as_str())
         .header("Content-Type", "application/json")
         .header("Accept", "application/json")
         .header("X-API-KEY", api_key)
@@ -50,7 +51,7 @@ impl Client {
     }
 
     async fn create_api_key(&self) -> Result<String, Box<dyn std::error::Error>> {
-        let url = format!("{}/auth", self.url);
+        let url = Url::parse(&format!("{}/auth", self.url))?;
 
         let payload = AuthRequest {
             client_id: self.client_id.clone(),
@@ -62,7 +63,7 @@ impl Client {
 
         let request = Request::builder()
             .method(Method::POST)
-            .uri(url)
+            .uri(url.as_str())
             .header("Content-Type", "application/json")
             .body(Body::from(json_payload))?;
 
@@ -82,7 +83,8 @@ impl Client {
         &self,
         api_key: &str,
     ) -> Result<String, Box<dyn std::error::Error>> {
-        let url = format!("{}/connect_token", self.url);
+        let url = Url::parse(&format!("{}/connect_token", self.url))?;
+
         let request =
             authenticated_request_builder(Method::POST, &url, api_key).body(Body::empty())?;
         let response = self.client.request(request).await?;
@@ -101,8 +103,12 @@ impl Client {
     pub async fn get_connectors(
         &self,
         api_key: &str,
+        with_sandbox: bool,
     ) -> Result<Vec<Connector>, Box<dyn std::error::Error>> {
-        let url = format!("{}/connectors", self.url);
+        let mut url = Url::parse(&format!("{}/connectors", self.url))?;
+        url.query_pairs_mut()
+            .append_pair("sandbox", &with_sandbox.to_string());
+
         let request =
             authenticated_request_builder(Method::GET, &url, api_key).body(Body::empty())?;
         let response = self.client.request(request).await?;
@@ -118,7 +124,8 @@ impl Client {
         api_key: &str,
         connector_id: &str,
     ) -> Result<Connector, Box<dyn std::error::Error>> {
-        let url = format!("{}/connectors/{}", self.url, connector_id);
+        let url: Url = Url::parse(&format!("{}/connectors/{}", self.url, connector_id))?;
+
         let request =
             authenticated_request_builder(Method::GET, &url, api_key).body(Body::empty())?;
         let response = self.client.request(request).await?;
@@ -134,7 +141,8 @@ impl Client {
         api_key: &str,
         item_id: &str,
     ) -> Result<Item, Box<dyn std::error::Error>> {
-        let url = format!("{}/items/{}", self.url, item_id);
+        let url: Url = Url::parse(&format!("{}/items/{}", self.url, item_id))?;
+
         let request =
             authenticated_request_builder(Method::GET, &url, api_key).body(Body::empty())?;
         let response = self.client.request(request).await?;
@@ -170,9 +178,9 @@ mod tests {
     #[tokio::test]
     async fn can_get_connectors() {
         let (client, api_key) = Client::new_from_env_with_api_key().await.unwrap();
-        let connectors = client.get_connectors(&api_key).await.unwrap();
-
+        let connectors = client.get_connectors(&api_key, false).await.unwrap();
         let connector = connectors.iter().find(|c| c.id == 201);
+
         match connector {
             Some(connector) => {
                 assert_eq!(connector.id, 201);
@@ -183,12 +191,47 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn can_get_connectors_with_sandbox() {
+        let (client, api_key) = Client::new_from_env_with_api_key().await.unwrap();
+        let connectors = client.get_connectors(&api_key, true).await.unwrap();
+        let connector = connectors.iter().find(|c| c.id == 2);
+
+        assert!(connector.is_some());
+
+        match connector {
+            Some(connector) => {
+                assert_eq!(connector.id, 2);
+                assert_eq!(connector.name, "Pluggy Bank");
+            }
+            None => panic!("No connector found"),
+        }
+    }
+
+    #[tokio::test]
+    async fn can_get_connectors_without_sandbox() {
+        let (client, api_key) = Client::new_from_env_with_api_key().await.unwrap();
+        let connectors = client.get_connectors(&api_key, false).await.unwrap();
+        let connector = connectors.iter().find(|c| c.id == 2);
+
+        assert!(connector.is_none());
+    }
+
+    #[tokio::test]
     async fn can_get_connector() {
         let (client, api_key) = Client::new_from_env_with_api_key().await.unwrap();
         let connector = client.get_connector(&api_key, "201").await.unwrap();
 
         assert_eq!(connector.id, 201);
         assert_eq!(connector.name, "Itaú");
+    }
+
+    #[tokio::test]
+    async fn can_get_connector_with_sandbox() {
+        let (client, api_key) = Client::new_from_env_with_api_key().await.unwrap();
+        let connector = client.get_connector(&api_key, "2").await.unwrap();
+
+        assert_eq!(connector.id, 2);
+        assert_eq!(connector.name, "Pluggy Bank");
     }
 
     #[tokio::test]
