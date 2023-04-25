@@ -194,8 +194,16 @@ mod tests {
     #[tokio::test]
     async fn can_get_item() {
         let (client, api_key) = Client::new_from_env_with_api_key().await.unwrap();
-        let item = client.get_item(&api_key, "123").await.unwrap();
+        let item = client
+            .get_item(&api_key, "e22c7308-7031-47f0-88a3-462f44d96f70")
+            .await
+            .unwrap();
 
-        assert_eq!(item.id, "123");
+        assert_eq!(item.id, "e22c7308-7031-47f0-88a3-462f44d96f70");
+        assert!(matches!(item.status, ItemStatus::LoginError));
+        assert!(matches!(item.execution_status, ExecutionStatus::Success));
+        assert_eq!(item.consecutive_failed_login_attempts, 0);
+        assert_eq!(item.connector.id, 201);
+        assert_eq!(item.connector.name, "Itaú");
     }
 }
