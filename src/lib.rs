@@ -174,6 +174,29 @@ impl Client {
 
         Ok(json)
     }
+
+    pub async fn create_item(
+        &self,
+        api_key: &str,
+        connector_id: i32,
+        parameters: &HashMap<String, String>,
+    ) -> Result<Item, Box<dyn std::error::Error>> {
+        let url = Url::parse(&format!("{}/items", self.url))?;
+
+        let create_item_request = CreateItemRequest {
+            connector_id,
+            parameters,
+        };
+
+        let request = authenticated_request_builder(Method::POST, &url, api_key)
+            .body(Body::from(serde_json::to_string(&create_item_request)?))?;
+        let response = self.client.request(request).await?;
+
+        let body: hyper::body::Bytes = hyper::body::to_bytes(response.into_body()).await?;
+        let json: Item = serde_json::from_slice(&body)?;
+
+        Ok(json)
+    }
 }
 
 #[cfg(test)]
@@ -306,5 +329,20 @@ mod tests {
         }
 
         assert_eq!(result.errors.len(), 0);
+    }
+
+    #[tokio::test]
+    async fn can_create_item() {
+        let (client, api_key) = Client::new_from_env_with_api_key().await.unwrap();
+        let parameters = HashMap::from([
+            ("user".to_string(), "user-ok".to_string()),
+            ("password".to_string(), "password-ok".to_string()),
+        ]);
+        let item = client.create_item(&api_key, 2, &parameters).await.unwrap();
+
+        assert_eq!(item.id.len(), 36);
+        assert_eq!(item.consecutive_failed_login_attempts, 0);
+        assert_eq!(item.connector.id, 2);
+        assert_eq!(item.connector.name, "Pluggy Bank");
     }
 }

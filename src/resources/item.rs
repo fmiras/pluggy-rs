@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use super::{Connector, ConnectorCredential, ExecutionErrorResult, ExecutionStatus};
 
@@ -57,4 +57,14 @@ pub struct Item {
     pub client_user_id: Option<String>,
     pub user_action: Option<UserAction>,
     pub consecutive_failed_login_attempts: i32,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateItemRequest<'a> {
+    // TODO support additional fields
+    // pub client_user_id: Option<String>,
+    // pub webhook_url: Option<String>,
+    pub connector_id: i32,
+    pub parameters: &'a HashMap<String, String>,
 }
