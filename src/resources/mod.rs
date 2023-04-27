@@ -1,10 +1,12 @@
 use serde::Deserialize;
 
+pub use crate::resources::category::*;
 pub use crate::resources::connector::*;
 pub use crate::resources::execution::*;
 pub use crate::resources::item::*;
 pub use crate::resources::validation::*;
 
+mod category;
 mod connector;
 mod execution;
 mod item;

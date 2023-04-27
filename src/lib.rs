@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use hyper::http::request::Builder;
-use hyper::{Body, Client as HyperClient, Method, Request};
+use hyper::{Body, Client as HyperClient, Method, Request, StatusCode};
 use hyper_tls::HttpsConnector;
 use url::Url;
 
@@ -217,6 +217,61 @@ impl Client {
 
         Ok(json)
     }
+
+    pub async fn update_item_mfa_credentials(
+        &self,
+        api_key: &str,
+        item_id: &str,
+        parameters: &HashMap<String, String>,
+    ) -> Result<Item, Box<dyn std::error::Error>> {
+        let url = Url::parse(&format!("{}/items/{}/mfa", self.url, item_id))?;
+
+        let update_item_mfa_credentials_request = UpdateItemRequest { parameters };
+
+        let request = authenticated_request_builder(Method::PATCH, &url, api_key).body(
+            Body::from(serde_json::to_string(&update_item_mfa_credentials_request)?),
+        )?;
+        let response = self.client.request(request).await?;
+
+        let body: hyper::body::Bytes = hyper::body::to_bytes(response.into_body()).await?;
+        let json: Item = serde_json::from_slice(&body)?;
+
+        Ok(json)
+    }
+
+    pub async fn delete_item(
+        &self,
+        api_key: &str,
+        item_id: &str,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let url = Url::parse(&format!("{}/items/{}", self.url, item_id))?;
+
+        let request =
+            authenticated_request_builder(Method::DELETE, &url, api_key).body(Body::empty())?;
+        let response = self.client.request(request).await?;
+
+        if response.status() != StatusCode::OK {
+            return Err("Failed to delete item".into());
+        }
+
+        Ok(())
+    }
+
+    pub async fn get_categories(
+        &self,
+        api_key: &str,
+    ) -> Result<PageResponse<Category>, Box<dyn std::error::Error>> {
+        let url = Url::parse(&format!("{}/categories", self.url))?;
+
+        let request =
+            authenticated_request_builder(Method::GET, &url, api_key).body(Body::empty())?;
+        let response = self.client.request(request).await?;
+
+        let body: hyper::body::Bytes = hyper::body::to_bytes(response.into_body()).await?;
+        let json: PageResponse<Category> = serde_json::from_slice(&body)?;
+
+        Ok(json)
+    }
 }
 
 #[cfg(test)]
@@ -352,7 +407,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn can_create_item() {
+    async fn can_create_item_and_delete() {
         let (client, api_key) = Client::new_from_env_with_api_key().await.unwrap();
         let parameters = HashMap::from([
             ("user".to_string(), "user-ok".to_string()),
@@ -366,6 +421,12 @@ mod tests {
         assert_eq!(item.consecutive_failed_login_attempts, 0);
         assert_eq!(item.connector.id, 2);
         assert_eq!(item.connector.name, "Pluggy Bank");
+
+        let result = client.delete_item(&api_key, &item.id).await;
+        assert!(result.is_ok());
+
+        let item = client.get_item(&api_key, &item.id).await;
+        assert!(item.is_err());
     }
 
     #[tokio::test]
@@ -385,5 +446,18 @@ mod tests {
         assert!(matches!(item.execution_status, ExecutionStatus::Created));
         assert_eq!(item.connector.id, 2);
         assert_eq!(item.connector.name, "Pluggy Bank");
+    }
+
+    #[tokio::test]
+    async fn can_get_categories() {
+        let (client, api_key) = Client::new_from_env_with_api_key().await.unwrap();
+        let categories = client.get_categories(&api_key).await.unwrap();
+
+        let income_category = categories
+            .results
+            .iter()
+            .find(|c| c.description == "Income");
+
+        assert!(income_category.is_some());
     }
 }
