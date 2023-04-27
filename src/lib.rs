@@ -260,7 +260,7 @@ impl Client {
     pub async fn get_categories(
         &self,
         api_key: &str,
-    ) -> Result<PageResponse<Category>, Box<dyn std::error::Error>> {
+    ) -> Result<Vec<Category>, Box<dyn std::error::Error>> {
         let url = Url::parse(&format!("{}/categories", self.url))?;
 
         let request =
@@ -269,6 +269,23 @@ impl Client {
 
         let body: hyper::body::Bytes = hyper::body::to_bytes(response.into_body()).await?;
         let json: PageResponse<Category> = serde_json::from_slice(&body)?;
+
+        Ok(json.results)
+    }
+
+    pub async fn get_category(
+        &self,
+        api_key: &str,
+        category_id: &str,
+    ) -> Result<Category, Box<dyn std::error::Error>> {
+        let url = Url::parse(&format!("{}/categories/{}", self.url, category_id))?;
+
+        let request =
+            authenticated_request_builder(Method::GET, &url, api_key).body(Body::empty())?;
+        let response = self.client.request(request).await?;
+
+        let body: hyper::body::Bytes = hyper::body::to_bytes(response.into_body()).await?;
+        let json: Category = serde_json::from_slice(&body)?;
 
         Ok(json)
     }
@@ -283,12 +300,14 @@ mod tests {
 
     #[test]
     fn can_instantiate_from_env() {
-        Client::new_from_env().unwrap();
+        let result = Client::new_from_env();
+        assert!(result.is_ok());
     }
 
     #[tokio::test]
     async fn can_instantiate_from_env_with_api_key() {
-        Client::new_from_env_with_api_key().await.unwrap();
+        let result = Client::new_from_env_with_api_key().await;
+        assert!(result.is_ok());
     }
 
     #[tokio::test]
@@ -453,11 +472,15 @@ mod tests {
         let (client, api_key) = Client::new_from_env_with_api_key().await.unwrap();
         let categories = client.get_categories(&api_key).await.unwrap();
 
-        let income_category = categories
-            .results
-            .iter()
-            .find(|c| c.description == "Income");
+        let income_category = categories.iter().find(|c| c.description == "Income");
 
         assert!(income_category.is_some());
+    }
+
+    #[tokio::test]
+    async fn can_get_category() {
+        let (client, api_key) = Client::new_from_env_with_api_key().await.unwrap();
+        let category = client.get_category(&api_key, "01000000").await;
+        assert!(category.is_ok());
     }
 }
