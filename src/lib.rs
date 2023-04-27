@@ -197,11 +197,34 @@ impl Client {
 
         Ok(json)
     }
+
+    pub async fn update_item(
+        &self,
+        api_key: &str,
+        item_id: &str,
+        parameters: &HashMap<String, String>,
+    ) -> Result<Item, Box<dyn std::error::Error>> {
+        let url = Url::parse(&format!("{}/items/{}", self.url, item_id))?;
+
+        let update_item_request = UpdateItemRequest { parameters };
+
+        let request = authenticated_request_builder(Method::PATCH, &url, api_key)
+            .body(Body::from(serde_json::to_string(&update_item_request)?))?;
+        let response = self.client.request(request).await?;
+
+        let body: hyper::body::Bytes = hyper::body::to_bytes(response.into_body()).await?;
+        let json: Item = serde_json::from_slice(&body)?;
+
+        Ok(json)
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const TEST_ITAU_ITEM_ID: &str = "e22c7308-7031-47f0-88a3-462f44d96f70";
+    const TEST_SANDBOX_ITEM_ID: &str = "e97238a7-7f5c-4667-8497-5ed8ac4fb509";
 
     #[test]
     fn can_instantiate_from_env() {
@@ -282,12 +305,9 @@ mod tests {
     #[tokio::test]
     async fn can_get_item() {
         let (client, api_key) = Client::new_from_env_with_api_key().await.unwrap();
-        let item = client
-            .get_item(&api_key, "e22c7308-7031-47f0-88a3-462f44d96f70")
-            .await
-            .unwrap();
+        let item = client.get_item(&api_key, TEST_ITAU_ITEM_ID).await.unwrap();
 
-        assert_eq!(item.id, "e22c7308-7031-47f0-88a3-462f44d96f70");
+        assert_eq!(item.id, TEST_ITAU_ITEM_ID);
         assert!(matches!(item.status, ItemStatus::LoginError));
         assert!(matches!(item.execution_status, ExecutionStatus::Success));
         assert_eq!(item.consecutive_failed_login_attempts, 0);
@@ -341,7 +361,28 @@ mod tests {
         let item = client.create_item(&api_key, 2, &parameters).await.unwrap();
 
         assert_eq!(item.id.len(), 36);
+        assert!(matches!(item.status, ItemStatus::Updating));
+        assert!(matches!(item.execution_status, ExecutionStatus::Created));
         assert_eq!(item.consecutive_failed_login_attempts, 0);
+        assert_eq!(item.connector.id, 2);
+        assert_eq!(item.connector.name, "Pluggy Bank");
+    }
+
+    #[tokio::test]
+    async fn can_update_item() {
+        let (client, api_key) = Client::new_from_env_with_api_key().await.unwrap();
+        let parameters = HashMap::from([
+            ("user".to_string(), "user-ok".to_string()),
+            ("password".to_string(), "password-ok".to_string()),
+        ]);
+        let item = client
+            .update_item(&api_key, TEST_SANDBOX_ITEM_ID, &parameters)
+            .await
+            .unwrap();
+
+        assert_eq!(item.id, TEST_SANDBOX_ITEM_ID);
+        assert!(matches!(item.status, ItemStatus::Updating));
+        assert!(matches!(item.execution_status, ExecutionStatus::Created));
         assert_eq!(item.connector.id, 2);
         assert_eq!(item.connector.name, "Pluggy Bank");
     }

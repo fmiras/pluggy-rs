@@ -68,3 +68,8 @@ pub struct CreateItemRequest<'a> {
     pub connector_id: i32,
     pub parameters: &'a HashMap<String, String>,
 }
+
+#[derive(Serialize)]
+pub struct UpdateItemRequest<'a> {
+    pub parameters: &'a HashMap<String, String>,
+}
