@@ -289,6 +289,81 @@ impl Client {
 
         Ok(json)
     }
+
+    pub async fn get_webhooks(
+        &self,
+        api_key: &str,
+    ) -> Result<Vec<Webhook>, Box<dyn std::error::Error>> {
+        let url = Url::parse(&format!("{}/webhooks", self.url))?;
+
+        let request =
+            authenticated_request_builder(Method::GET, &url, api_key).body(Body::empty())?;
+        let response = self.client.request(request).await?;
+
+        let body: hyper::body::Bytes = hyper::body::to_bytes(response.into_body()).await?;
+        let json: PageResponse<Webhook> = serde_json::from_slice(&body)?;
+
+        Ok(json.results)
+    }
+
+    pub async fn get_webhook(
+        &self,
+        api_key: &str,
+        webhook_id: &str,
+    ) -> Result<Webhook, Box<dyn std::error::Error>> {
+        let url = Url::parse(&format!("{}/webhooks/{}", self.url, webhook_id))?;
+
+        let request =
+            authenticated_request_builder(Method::GET, &url, api_key).body(Body::empty())?;
+        let response = self.client.request(request).await?;
+
+        let body: hyper::body::Bytes = hyper::body::to_bytes(response.into_body()).await?;
+        let json: Webhook = serde_json::from_slice(&body)?;
+
+        Ok(json)
+    }
+
+    pub async fn create_webhook(
+        &self,
+        api_key: &str,
+        url: &str,
+        event: WebhookEvent,
+    ) -> Result<Webhook, Box<dyn std::error::Error>> {
+        let request_url = Url::parse(&format!("{}/webhooks", self.url))?;
+
+        let create_webhook_request = CreateWebhookRequest {
+            url: url.to_string(),
+            event,
+            headers: None,
+        };
+
+        let request = authenticated_request_builder(Method::POST, &request_url, api_key)
+            .body(Body::from(serde_json::to_string(&create_webhook_request)?))?;
+        let response = self.client.request(request).await?;
+
+        let body: hyper::body::Bytes = hyper::body::to_bytes(response.into_body()).await?;
+        let webhook: Webhook = serde_json::from_slice(&body)?;
+
+        Ok(webhook)
+    }
+
+    pub async fn delete_webhook(
+        &self,
+        api_key: &str,
+        webhook_id: &str,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let url = Url::parse(&format!("{}/webhooks/{}", self.url, webhook_id))?;
+
+        let request =
+            authenticated_request_builder(Method::DELETE, &url, api_key).body(Body::empty())?;
+        let response = self.client.request(request).await?;
+
+        if response.status() != StatusCode::OK {
+            return Err("Failed to delete webhook".into());
+        }
+
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -297,6 +372,7 @@ mod tests {
 
     const TEST_ITAU_ITEM_ID: &str = "e22c7308-7031-47f0-88a3-462f44d96f70";
     const TEST_SANDBOX_ITEM_ID: &str = "e97238a7-7f5c-4667-8497-5ed8ac4fb509";
+    const TEST_WEBHOOK_ID: &str = "6903e8ab-5858-460c-9c6b-2e367ac0d3e9";
 
     #[test]
     fn can_instantiate_from_env() {
@@ -482,5 +558,44 @@ mod tests {
         let (client, api_key) = Client::new_from_env_with_api_key().await.unwrap();
         let category = client.get_category(&api_key, "01000000").await;
         assert!(category.is_ok());
+    }
+
+    #[tokio::test]
+    async fn can_get_webhooks() {
+        let (client, api_key) = Client::new_from_env_with_api_key().await.unwrap();
+        let webhooks = client.get_webhooks(&api_key).await.unwrap();
+
+        assert!(webhooks.len() > 0);
+    }
+
+    #[tokio::test]
+    async fn can_get_webhook() {
+        let (client, api_key) = Client::new_from_env_with_api_key().await.unwrap();
+        let webhook = client.get_webhook(&api_key, TEST_WEBHOOK_ID).await.unwrap();
+
+        assert_eq!(webhook.id, TEST_WEBHOOK_ID);
+        assert_eq!(webhook.url, "https://some.site/pluggy-notifications");
+        assert!(matches!(webhook.event, WebhookEvent::ItemUpdated));
+    }
+
+    #[tokio::test]
+    async fn can_create_webhook_and_delete() {
+        let (client, api_key) = Client::new_from_env_with_api_key().await.unwrap();
+
+        let url = "https://somesite.com/pluggy-notifications";
+        let webhook = client
+            .create_webhook(&api_key, url, WebhookEvent::ItemUpdated)
+            .await
+            .unwrap();
+
+        assert_eq!(webhook.id.len(), 36);
+        assert_eq!(webhook.url, url);
+        assert!(matches!(webhook.event, WebhookEvent::ItemUpdated));
+
+        let result = client.delete_webhook(&api_key, &webhook.id).await;
+        assert!(result.is_ok());
+
+        let webhook = client.get_webhook(&api_key, &webhook.id).await;
+        assert!(webhook.is_err());
     }
 }
